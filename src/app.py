@@ -5,11 +5,13 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import re
+from typing import Optional, List
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -84,8 +86,44 @@ def root():
 
 
 @app.get("/activities")
-def get_activities():
-    return activities
+def get_activities(
+    search: Optional[str] = Query(None, description="Search term for activity name or description"),
+    sort_by: Optional[str] = Query(None, description="Sort by field: name, participants, max_participants"),
+    sort_order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    min_participants: Optional[int] = Query(None, description="Minimum number of participants"),
+    max_participants: Optional[int] = Query(None, description="Maximum number of participants"),
+    day: Optional[str] = Query(None, description="Filter by day of the week (e.g., Monday)")
+):
+    """Get activities with optional filtering, sorting, and search"""
+    filtered = []
+    for name, data in activities.items():
+        # Search filter
+        if search:
+            if search.lower() not in name.lower() and search.lower() not in data["description"].lower():
+                continue
+        # Participants filter
+        num_participants = len(data["participants"])
+        if min_participants is not None and num_participants < min_participants:
+            continue
+        if max_participants is not None and num_participants > max_participants:
+            continue
+        # Day filter (simple match in schedule string)
+        if day:
+            if not re.search(day, data["schedule"], re.IGNORECASE):
+                continue
+        filtered.append({"name": name, **data, "num_participants": num_participants})
+
+    # Sorting
+    if sort_by:
+        reverse = sort_order == "desc"
+        if sort_by == "name":
+            filtered.sort(key=lambda x: x["name"], reverse=reverse)
+        elif sort_by == "participants":
+            filtered.sort(key=lambda x: x["num_participants"], reverse=reverse)
+        elif sort_by == "max_participants":
+            filtered.sort(key=lambda x: x["max_participants"], reverse=reverse)
+
+    return filtered
 
 
 @app.post("/activities/{activity_name}/signup")
